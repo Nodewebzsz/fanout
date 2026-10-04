@@ -31,7 +31,7 @@ SOCKS5 监听在母机，出站连接用 `setns` 切进对应 netns 建立。
 需要 root，Linux（依赖 netns）。
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/byJoey/fanout/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Nodewebzsz/fanout/main/install.sh)
 ```
 
 会自动下载对应架构的预编译二进制。也可以 clone 仓库后在源码目录运行同一个脚本，
@@ -47,7 +47,7 @@ Xray 到 `/var/lib/fanout/bin/`，装了则跳过，入站交给面板管。
 
 ```bash
 apk add bash curl
-bash <(curl -fsSL https://raw.githubusercontent.com/byJoey/fanout/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Nodewebzsz/fanout/main/install.sh)
 ```
 
 另外 fanout 要在 netns 里跑 openvpn，**宿主必须放开 `/dev/net/tun`**。
@@ -67,6 +67,28 @@ Operation not permitted 的话，这台机器用不了，跟发行版无关。
 
 路径和口令都是随机生成的，分别存在 `/var/lib/fanout/basepath` 和
 `/var/lib/fanout/password`。路径不对一律返回 404，扫端口的看不到这里跑着什么。
+
+### 启动参数
+
+直接运行二进制时可使用以下参数。安装脚本生成的服务默认只指定 `-dir`，端口和监听
+地址优先从 `/var/lib/fanout/settings.json` 读取；Web 界面或 `f` 菜单修改后，重启仍会
+沿用保存的设置。
+
+```bash
+fanout -dir /var/lib/fanout \
+  -web 8899 \
+  -max 20 \
+  -ip 203.0.113.10 \
+  -panel native
+```
+
+- `-dir`：运行数据目录，默认 `/var/lib/fanout`；不同目录可运行彼此隔离的实例。
+- `-web`：首次启动时的管理端口，默认 `8899`；显式传入时覆盖已保存端口。
+- `-max`：允许的最大隧道槽位，默认 `20`。
+- `-ip`：分享节点链接时使用的公网 IPv4；不传则自动探测，也可用
+  `FANOUT_PUBLIC_IP` 环境变量指定。
+- `-panel`：固定使用 `3x-ui`、`native` 或 `xray-cf-lite`；不传则按设置或自动探测。
+- `-version`：打印版本并退出。
 
 ## 使用
 
@@ -159,7 +181,7 @@ REALITY 的密钥对和 shortId 自动生成；TLS 不填证书就生成自签�
 
 ```
   状态      运行中
-  版本      fanout v0.1.1
+  版本      fanout <当前版本>
   开机自启  enabled
 
   管理地址  http://1.2.3.4:8899/gwPuWHvaNr/
@@ -197,6 +219,23 @@ f uninstall  # 卸载
 15 分钟以及点击「立即检测并自动填补」时执行。失败候选冷却 15 分钟；一个国家候选
 耗尽后本轮直接结束，其他国家继续处理。未托管的历史出口仍使用原来的自动重连逻辑。
 
+### 国家目标文件与 API
+
+国家目标保存在 `${WORK_DIR}/country_targets.json`，默认路径是
+`/var/lib/fanout/country_targets.json`。文件由 fanout 原子写入，不建议手工编辑；迁移
+或备份时可以和 `state.json` 一起保存。目标键由面板类型、模板入站 ID 和大写国家代码
+组成，例如 `native:12:JP`。
+
+管理界面使用以下接口：
+
+- `GET /<访问路径>/api/targets`：读取所有目标及健康、连接中、等待填补、缺口和超额状态。
+- `POST /<访问路径>/api/targets`：保存多个国家目标。请求体示例：
+  `{"template_id":12,"targets":[{"country_code":"JP","target_count":3}]}`。
+- `POST /<访问路径>/api/targets/reconcile`：立即触发一次全量检测和自动填补。
+
+这些接口和其他管理接口一样需要登录会话。旧版本创建的出口没有 `target_id`，会继续
+按未托管出口处理，不会被国家目标自动接管、计数或删除。
+
 ## 已知限制
 
 - SOCKS5 支持 CONNECT 和 UDP ASSOCIATE，DNS/QUIC 这类 UDP 也走隧道
@@ -209,6 +248,8 @@ f uninstall  # 卸载
   订阅地址同理，token 是明文走的。
 - 换节点会避开这条出口之前用过的节点（最多记 16 个），同地区都换过一轮后
   从头开始。一个地区只有一个可用节点时换不动，界面会直接说明原因。
+- 多国家目标只对能够克隆和维护入站的 `native`、`3x-ui` 后端生效；
+  `xray-cf-lite` 只能绑定已有节点，不能创建或自动补齐目标。
 
 ## 许可
 
@@ -220,6 +261,7 @@ f uninstall  # 卸载
 
 ## 交流
 
+- GitHub：<https://github.com/Nodewebzsz/fanout>
 - 交流群：<https://t.me/+ft-zI76oovgwNmRh>
 - 视频教程：<https://youtube.com/@joeyblog>
 - 博客：<https://joeyblog.net>
