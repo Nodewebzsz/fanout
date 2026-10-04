@@ -19,15 +19,20 @@ type Manager struct {
 	maxSlots  int
 	jobs      JobStore
 	probeExit func(*Tunnel) (string, error)
+	tryNodeFn func(*Tunnel) error
+	rebindFn  func(string, *Tunnel) error
 }
 
 func NewManager(maxSlots int, workDir string) *Manager {
-	return &Manager{
+	m := &Manager{
 		tunnels:   map[int]*Tunnel{},
 		workDir:   workDir,
 		maxSlots:  maxSlots,
 		probeExit: func(t *Tunnel) (string, error) { return probeExitThroughSOCKS(t, defaultProbeCommand) },
 	}
+	m.tryNodeFn = m.tryNode
+	m.rebindFn = m.rebind
+	return m
 }
 
 // RefreshNodes 重新拉取节点列表。
@@ -74,10 +79,21 @@ func (m *Manager) freeSlot() (int, error) {
 
 // Start 为指定节点开一条隧道，返回分配到的本地端口。
 func (m *Manager) Start(node Node) (*Tunnel, error) {
+	t, err := m.allocateTunnel(node, "")
+	if err != nil {
+		return nil, err
+	}
+	go m.bringUp(t, true)
+	return t, nil
+}
+
+// allocateTunnel reserves a stable slot, port, and credential set without
+// starting a background connection loop.
+func (m *Manager) allocateTunnel(node Node, targetID string) (*Tunnel, error) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	slot, err := m.freeSlot()
 	if err != nil {
-		m.mu.Unlock()
 		return nil, err
 	}
 	// 端口随机取，避免固定规律撞上机器上的其他服务
@@ -87,26 +103,22 @@ func (m *Manager) Start(node Node) (*Tunnel, error) {
 	}
 	port, err := freeRandomPort(taken)
 	if err != nil {
-		m.mu.Unlock()
 		return nil, err
 	}
 	cred, err := newSocksCred()
 	if err != nil {
-		m.mu.Unlock()
 		return nil, err
 	}
 	t := &Tunnel{
-		Slot:   slot,
-		Port:   port,
-		Node:   node,
-		Status: "starting",
-		Since:  time.Now(),
-		Cred:   cred,
+		Slot:     slot,
+		Port:     port,
+		Node:     node,
+		Status:   "starting",
+		Since:    time.Now(),
+		Cred:     cred,
+		TargetID: targetID,
 	}
 	m.tunnels[slot] = t
-	m.mu.Unlock()
-
-	go m.bringUp(t, true)
 	return t, nil
 }
 
@@ -188,7 +200,7 @@ func (m *Manager) tryCandidates(t *Tunnel, notify bool) bool {
 			t.Err = fmt.Sprintf("已换到第 %d 个候选节点", i+1)
 		}
 
-		err := m.tryNode(t)
+		err := m.tryNodeFn(t)
 		if err == nil {
 			t.Status = "up"
 			t.Err = ""

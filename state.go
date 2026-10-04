@@ -121,6 +121,12 @@ func (m *Manager) restoreState() (int, error) {
 		m.mu.Lock()
 		m.tunnels[p.Slot] = t
 		m.mu.Unlock()
+		if p.TargetID != "" {
+			// Managed tunnels are recovered by the startup reconciler. Do not enter
+			// the legacy infinite reconnect loop while a country has no candidates.
+			t.Status = "waiting_fill"
+			continue
+		}
 		go m.restoreTunnel(t)
 	}
 	return len(st.Tunnels), nil
