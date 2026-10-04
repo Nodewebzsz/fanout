@@ -77,14 +77,14 @@ Operation not permitted 的话，这台机器用不了，跟发行版无关。
 ```bash
 fanout -dir /var/lib/fanout \
   -web 8899 \
-  -max 20 \
+  -max 40 \
   -ip 203.0.113.10 \
   -panel native
 ```
 
 - `-dir`：运行数据目录，默认 `/var/lib/fanout`；不同目录可运行彼此隔离的实例。
 - `-web`：首次启动时的管理端口，默认 `8899`；显式传入时覆盖已保存端口。
-- `-max`：允许的最大隧道槽位，默认 `20`。
+- `-max`：允许的最大隧道槽位，默认 `40`。这是整台 VPS 的总上限，不是每个国家的上限。
 - `-ip`：分享节点链接时使用的公网 IPv4；不传则自动探测，也可用
   `FANOUT_PUBLIC_IP` 环境变量指定。
 - `-panel`：固定使用 `3x-ui`、`native` 或 `xray-cf-lite`；不传则按设置或自动探测。

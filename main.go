@@ -20,7 +20,7 @@ var version = "dev"
 func main() {
 	var (
 		webPort  = flag.Int("web", 8899, "Web 管理端口")
-		maxSlots = flag.Int("max", 20, "最多同时运行的隧道数")
+		maxSlots = flag.Int("max", 40, "最多同时运行的隧道数")
 		workDir  = flag.String("dir", "/var/lib/fanout", "工作目录")
 	)
 	panelMode := flag.String("panel", "", "节点链接后端: 留空按界面设置/自动探测, 3x-ui, native, xray-cf-lite")
