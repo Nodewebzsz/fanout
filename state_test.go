@@ -87,7 +87,9 @@ func TestRestoreStateReadsTargetID(t *testing.T) {
 	if got := tn.TargetID; got != "native:12:JP" {
 		t.Fatalf("target id not restored: %q", got)
 	}
-	tn.Status = "stopped"
+	if err := m.Stop(1); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // 收尾之后标记要清掉，否则每次重启都会白做一次改绑。
@@ -147,7 +149,9 @@ func TestRestoreStateReadsPrevHost(t *testing.T) {
 		t.Fatalf("没读回换节点标记，实际 %q", got)
 	}
 	// 收尾：别让后台的 bringUpPersist 继续折腾
-	tn.Status = "stopped"
+	if err := m.Stop(1); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // 老版本的状态文件里没有这个字段，读出来该是空的，不能误触发改绑。
@@ -167,7 +171,9 @@ func TestRestoreStateOldFormatHasNoPrevHost(t *testing.T) {
 	if got := tn.prevHostOf(); got != "" {
 		t.Fatalf("老格式不该带标记，实际 %q", got)
 	}
-	tn.Status = "stopped"
+	if err := m.Stop(1); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func containsStr(s, sub string) bool {

@@ -221,7 +221,10 @@ func (m *Manager) tryCandidates(t *Tunnel, notify bool) bool {
 // 用指针比对：Stop 会从 map 里删除并把 Status 置 stopped，
 // 重连循环据此退出，避免对着一条已经不存在的隧道空转。
 func (m *Manager) tunnelActive(t *Tunnel) bool {
-	if t.Status == "stopped" {
+	t.mu.Lock()
+	stopped := t.Status == "stopped"
+	t.mu.Unlock()
+	if stopped {
 		return false
 	}
 	m.mu.RLock()
