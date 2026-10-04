@@ -226,6 +226,60 @@ func (r *CountryReconciler) coolDown(host string) {
 	r.mu.Unlock()
 }
 
+// bindExistingInbound adopts a user-created inbound before falling back to
+// cloning the selected template. The old behavior always cloned the template
+// for every newly created managed exit, leaving manually created inbounds
+// orphaned after an update or a replacement pass.
+func (r *CountryReconciler) bindExistingInbound(panel Panel, tunnel *Tunnel) (bool, error) {
+	if panel == nil || tunnel == nil || tunnel.Status != "up" {
+		return false, nil
+	}
+	live := map[string]bool{}
+	for _, current := range r.mgr.Tunnels() {
+		if current.Status == "up" {
+			live[sanitizeTag(current.Node.HostName)] = true
+		}
+	}
+	inbounds, err := panel.Inbounds(live)
+	if err != nil {
+		return false, err
+	}
+	for _, inbound := range inbounds {
+		if inbound.BoundTo != "" || inbound.Tag == "" {
+			continue
+		}
+		if err := panel.Bind(inbound.Tag, tunnel.Node.HostName, r.mgr.Tunnels()); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// adoptTemplateInbound handles an already-complete target after an upgrade:
+// the selected user-created template may still be unbound even though the
+// target already has healthy exits. Reuse it instead of leaving it in the
+// direct/orphan list.
+func (r *CountryReconciler) adoptTemplateInbound(target CountryTarget, panel Panel) (bool, error) {
+	detail, err := panel.InboundDetail(target.TemplateID, "")
+	if err != nil {
+		return false, err
+	}
+	if detail.BoundTo != "" || detail.Tag == "" {
+		return false, nil
+	}
+	for _, tunnel := range r.mgr.Tunnels() {
+		if tunnel.TargetID != target.ID || tunnel.Status != "up" {
+			continue
+		}
+		if err := panel.Bind(detail.Tag, tunnel.Node.HostName, r.mgr.Tunnels()); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
 // RunOnce performs one bounded reconciliation pass. It never sleeps waiting for
 // candidates; unresolved deficits remain persistent for the next trigger.
 func (r *CountryReconciler) RunOnce(job *Job) {
@@ -320,6 +374,11 @@ func (r *CountryReconciler) reconcileTarget(target CountryTarget, panel Panel) (
 			r.mgr.MarkWaitingFill(tunnel, lastErr)
 		}
 	}
+	if adopted, err := r.adoptTemplateInbound(target, panel); err != nil {
+		return "", fmt.Errorf("绑定已有模板入站失败: %w", err)
+	} else if adopted {
+		repaired++
+	}
 
 	status := calculateTargetStatus(target, r.mgr.Tunnels())
 	for status.Missing > 0 {
@@ -335,6 +394,16 @@ func (r *CountryReconciler) reconcileTarget(target CountryTarget, panel Panel) (
 				lastErr = err
 				r.coolDown(candidate.HostName)
 				continue
+			}
+			adopted, err := r.bindExistingInbound(panel, tunnel)
+			if err != nil {
+				_ = r.mgr.Stop(tunnel.Slot)
+				return "", fmt.Errorf("绑定已有入站失败: %w", err)
+			}
+			if adopted {
+				createdCount++
+				createdThisSlot = true
+				break
 			}
 			cloned, err := panel.CloneToTunnels(target.TemplateID, []string{candidate.HostName}, r.mgr.Tunnels())
 			invalidateInbounds()

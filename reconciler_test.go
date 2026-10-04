@@ -23,7 +23,7 @@ func (p *reconcilePanel) InboundDetail(id int, publicHost string) (*InboundDetai
 	if id != p.templateID {
 		return nil, fmt.Errorf("入站 %d 不存在", id)
 	}
-	return &InboundDetail{Inbound: Inbound{ID: id, Enable: true}}, nil
+	return &InboundDetail{Inbound: Inbound{ID: id, Enable: true, Tag: "in-template-tcp"}}, nil
 }
 
 func (p *reconcilePanel) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunnel) ([]ClonedInbound, error) {
@@ -112,6 +112,30 @@ func TestCandidatesStayInCountryAndRespectCooldown(t *testing.T) {
 	}, nil)
 	if len(got) != 2 || got[0].HostName != "jp2" || got[1].HostName != "jp3" {
 		t.Fatalf("unexpected candidates: %+v", got)
+	}
+}
+
+func TestReconcileAdoptsExistingUnboundInboundBeforeCloning(t *testing.T) {
+	r, manager, panel := newReconcilerFixture(t, 1, []Node{{HostName: "jp1", CountryCode: "JP", Residential: true}})
+	panel.fakePanel.inbounds = []Inbound{{ID: 99, Tag: "in-56388-tcp", Remark: "vless-56388"}}
+	runReconcileOnce(r)
+	if len(panel.cloned) != 0 {
+		t.Fatalf("adopting an existing inbound must not clone: %+v", panel.cloned)
+	}
+	if len(manager.Tunnels()) != 1 || manager.Tunnels()[0].Status != "up" {
+		t.Fatalf("expected one healthy managed tunnel: %+v", manager.Tunnels())
+	}
+}
+
+func TestReconcileAdoptsUnboundTemplateWhenTargetAlreadyHealthy(t *testing.T) {
+	r, manager, panel := newReconcilerFixture(t, 1, nil)
+	manager.tunnels[1] = &Tunnel{
+		Slot: 1, Status: "up", TargetID: "native:12:JP",
+		Node: Node{HostName: "jp1", CountryCode: "JP"},
+	}
+	runReconcileOnce(r)
+	if len(panel.cloned) != 0 {
+		t.Fatalf("a healthy target with an unbound template must not clone: %+v", panel.cloned)
 	}
 }
 

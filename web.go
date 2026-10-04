@@ -868,7 +868,7 @@ async function loadWizard(){
     sel.innerHTML =
       (free.length ? '<optgroup label="未绑定出口">' + free.map(opt).join('') + '</optgroup>' : '')
       + (bound.length ? '<optgroup label="已挂在出口上">' + bound.map(opt).join('') + '</optgroup>' : '');
-    $('#tplhint').textContent = '每个国家按此模板创建节点；后续换 VPN 后端时端口和客户端链接保持不变';
+    $('#tplhint').textContent = '优先绑定已有未绑定节点；数量不足时才按此模板补建，端口和客户端链接保持不变';
     updateTargetHint();
   }catch(e){
     sel.innerHTML = '<option value="0">' + backendName() + '不可用</option>';
