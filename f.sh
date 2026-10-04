@@ -5,7 +5,7 @@ set -uo pipefail
 WORK_DIR=/var/lib/fanout
 SERVICE=fanout
 BIN=/usr/local/bin/fanout
-REPO="${REPO:-Nodewebzsz/fanout}"
+REPO="Nodewebzsz/fanout"
 
 G='\033[0;32m'; R='\033[0;31m'; Y='\033[0;33m'; B='\033[0;36m'; D='\033[2m'; N='\033[0m'
 
@@ -274,7 +274,7 @@ migrate_port_to_settings() {
 }
 
 do_update() {
-  local arch goarch tmp
+  local arch goarch tmp current candidate current_key candidate_key
   arch=$(uname -m)
   case "$arch" in
     x86_64) goarch=amd64 ;;
@@ -290,12 +290,29 @@ do_update() {
     echo -e "  ${R}下载失败${N}"; rm -rf "$tmp"; return
   fi
   tar xzf "$tmp/f.tar.gz" -C "$tmp"
+  current=$($BIN -version 2>/dev/null | awk '{print $2}')
+  candidate=$($tmp/fanout -version 2>/dev/null | awk '{print $2}')
+  current_key=$(version_key "$current")
+  candidate_key=$(version_key "$candidate")
+  if [[ -n "$current_key" && -n "$candidate_key" ]] && (( candidate_key < current_key )); then
+    echo -e "  ${Y}远程版本 ${candidate} 低于当前版本 ${current}，已拒绝降级${N}"
+    rm -rf "$tmp"
+    return
+  fi
   svc_stop
   install -m 755 "$tmp/fanout" "$BIN"
   migrate_port_to_settings
   svc_start
   rm -rf "$tmp"
   echo -e "  ${G}已更新到 $("$BIN" -version 2>/dev/null)${N}"
+}
+
+version_key() {
+  local v a b c
+  v=${1#v}
+  IFS=. read -r a b c _ <<< "$v"
+  [[ "$a" =~ ^[0-9]+$ && "$b" =~ ^[0-9]+$ && "$c" =~ ^[0-9]+$ ]] || return 0
+  printf '%d%03d%03d' "$((10#$a))" "$((10#$b))" "$((10#$c))"
 }
 
 do_uninstall() {
