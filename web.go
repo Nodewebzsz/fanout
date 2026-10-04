@@ -58,6 +58,7 @@ main{padding:14px 16px 40px;max-width:1180px;margin:0 auto}
 .dot.up{background:var(--ok)}
 .dot.starting{background:var(--warn);animation:pulse 1.2s ease-in-out infinite}
 .dot.failed{background:var(--bad)}
+.dot.waiting_fill{background:var(--warn)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .ip{font-weight:600;font-variant-numeric:tabular-nums}
 .meta{color:var(--dim);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -83,6 +84,25 @@ main{padding:14px 16px 40px;max-width:1180px;margin:0 auto}
   text-align:center;color:var(--dim)}
 .empty button{margin-top:14px}
 .jobs{margin-bottom:12px}
+.targets{border:1px solid var(--line);border-radius:6px;background:var(--panel);
+  padding:10px 12px;margin-bottom:12px}
+.targets>.top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.targets>.top h2{font-size:12px;margin:0;font-weight:600;color:var(--dim)}
+.target-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:7px}
+.target-card{border:1px solid var(--line);border-radius:4px;background:#0e1116;padding:8px 10px}
+.target-card .title{display:flex;align-items:baseline;gap:8px}
+.target-card .title strong{font-size:13px}
+.target-card .meter{font-variant-numeric:tabular-nums;margin-left:auto}
+.target-card .meter.ok{color:var(--ok)}
+.target-card .meter.wait{color:var(--warn)}
+.target-card .facts{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.target-card .fact{border:1px solid var(--line);border-radius:3px;padding:1px 6px;
+  color:var(--dim);font-size:10px}
+.target-card .fact.warn{color:var(--warn);border-color:rgba(201,144,58,.35)}
+.target-card .fact.bad{color:var(--bad);border-color:rgba(194,84,80,.35)}
+.target-card .times{color:var(--dim);font-size:10px;margin-top:6px}
+.target-card .target-error{color:var(--bad);font-size:10px;margin-top:5px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .job{border:1px solid var(--line);border-radius:6px;background:var(--panel);
   padding:10px 12px;margin-bottom:8px}
 .job .top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
@@ -128,13 +148,19 @@ label.f>span{display:block;color:var(--dim);font-size:11px;margin-bottom:6px}
 .rg b{font-weight:600;font-size:12px;display:block;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
 .rg em{display:block;font-style:normal;color:var(--dim);font-size:11px;margin-top:2px}
+.countrypick{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+.countrypick .countrytoggle{display:block;text-align:left;padding:0;border:0;background:transparent;
+  min-width:0;color:inherit}
+.countrypick .countrytoggle:hover:not(:disabled){border:0}
+.countrypick .countrycount{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10px}
+.countrypick input[type=number]{width:52px;text-align:center;padding:4px 3px}
 .stepper{display:flex;align-items:center;gap:0;width:fit-content;
   border:1px solid var(--line);border-radius:4px;overflow:hidden;background:#0e1116}
 .stepper button{border:0;border-radius:0;background:transparent;padding:5px 11px}
-select,input[type=search],input[type=text]{font:inherit;background:#0e1116;
+select,input[type=search],input[type=text],input[type=number]{font:inherit;background:#0e1116;
   border:1px solid var(--line);color:var(--text);border-radius:4px;
   padding:5px 8px;width:100%}
-select:focus,input[type=search]:focus,input[type=text]:focus{outline:none;border-color:var(--accent)}
+select:focus,input[type=search]:focus,input[type=text]:focus,input[type=number]:focus{outline:none;border-color:var(--accent)}
 .stepper input[type=text]{width:56px;text-align:center;font:inherit;background:transparent;
   border:0;border-left:1px solid var(--line);border-right:1px solid var(--line);
   color:var(--text);padding:5px 0;font-variant-numeric:tabular-nums}
@@ -210,6 +236,19 @@ textarea:focus{outline:none;border-color:var(--accent)}
 <main>
   <div class="jobs" id="jobs"></div>
 
+  <section class="targets">
+    <div class="top">
+      <h2>出口保有目标</h2>
+      <span class="count" id="targetCount"></span>
+      <span class="spacer"></span>
+      <button id="reconcileNow" title="检测现有出口并按国家自动填补">
+        <svg viewBox="0 0 24 24"><path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"/></svg>
+        立即检测并自动填补
+      </button>
+    </div>
+    <div class="target-grid" id="targetList"></div>
+  </section>
+
   <div class="bar">
     <h2>出口</h2>
     <span class="count" id="ecount"></span>
@@ -244,7 +283,7 @@ textarea:focus{outline:none;border-color:var(--accent)}
 <div class="modal" id="wizard">
   <div class="sheet">
     <div class="head">
-      <h2>新建出口</h2>
+      <h2>新建自动保有出口</h2>
       <span class="spacer"></span>
       <button class="icon" data-close="wizard" title="关闭">
         <svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -252,28 +291,17 @@ textarea:focus{outline:none;border-color:var(--accent)}
     </div>
     <div class="body">
       <label class="f">
-        <span>地区</span>
-        <input type="search" id="rgfilter" placeholder="筛选地区">
+        <span>国家与目标数量（可多选）</span>
+        <input type="search" id="rgfilter" placeholder="筛选国家">
         <div class="regions" id="regions" style="margin-top:6px"></div>
-      </label>
-      <label class="f">
-        <span id="countlabel">数量</span>
-        <div class="stepper">
-          <button id="minus" title="减少">
-            <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
-          </button>
-          <input id="count" type="text" inputmode="numeric" value="3">
-          <button id="plus" title="增加">
-            <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-          </button>
-        </div>
-        <div class="hint" id="availhint"></div>
+        <div class="hint" id="availhint">当前空闲数仅供参考；目标可以更大，系统会在后续检测中继续填补。</div>
       </label>
       <label class="f" id="tplwrap">
-        <span>节点链接</span>
+        <span>节点模板</span>
         <select id="tpl"></select>
         <div class="hint" id="tplhint"></div>
       </label>
+      <div class="hint bad" id="targetReadonly" hidden>xray-cf-lite 模式只支持绑定已有节点，不能创建自动保有目标。</div>
     </div>
     <div class="foot">
       <span class="count" id="wzhint"></span>
@@ -573,6 +601,7 @@ async function copy(text){
 
 let view = {exits:[], direct:[], panel:'', backend:'', public_ip:''};
 let inbounds = [];
+let targetStatuses = [];
 
 // 自建模式下入站由 fanout 自己管，界面要提供新建入口；
 // 接管 3x-ui 时入站归面板管，这里只读不写。
@@ -582,7 +611,7 @@ function isXCL(){ return view.backend === 'xray-cf-lite'; }
 const BACKEND_NAME = {'native':'自建 Xray', '3x-ui':'3x-ui', 'xray-cf-lite':'xray-cf-lite'};
 function backendName(){ return BACKEND_NAME[view.backend] || '3x-ui'; }
 
-const STATUS = {up:'已连通', starting:'连接中', failed:'失败', stopped:'已停止'};
+const STATUS = {up:'已连通', starting:'连接中', waiting_fill:'等待填补', failed:'失败', stopped:'已停止'};
 
 function renderExits(){
   const list = $('#list');
@@ -606,7 +635,7 @@ function renderExits(){
           + esc((i.remark || i.protocol) + ' · ' + i.protocol + ' :' + i.port) + '">'
           + esc(i.protocol) + ' :' + i.port + '</button>').join('')
       : '<span class="chip none">无节点</span>';
-    const err = e.status === 'failed' && e.err
+    const err = (e.status === 'failed' || e.status === 'waiting_fill') && e.err
       ? '<div class="errline" title="' + esc(e.err) + '">' + esc(e.err) + '</div>' : '';
     // country 后端已经给成"国旗 中文"，再拼国家码就重复了
     const place = esc(e.country || e.region || '—');
@@ -674,6 +703,41 @@ function renderJobs(jobs){
   }).join('');
 }
 
+function shortTime(value){
+  if(!value || value.startsWith('0001-')) return '—';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+}
+
+function renderTargets(){
+  const box = $('#targetList');
+  $('#targetCount').textContent = targetStatuses.length ? targetStatuses.length + ' 组' : '';
+  if(!targetStatuses.length){
+    box.innerHTML = '<div class="count">尚未设置目标。新建出口时选择多个国家和各自数量，系统会持续维护。</div>';
+    return;
+  }
+  box.innerHTML = targetStatuses.map(t => {
+    const complete = t.healthy >= t.target_count;
+    const facts = [
+      t.starting ? '<span class="fact">连接中 ' + t.starting + '</span>' : '',
+      t.waiting_fill ? '<span class="fact warn">等待填补 ' + t.waiting_fill + '</span>' : '',
+      t.missing ? '<span class="fact bad">缺少槽位 ' + t.missing + '</span>' : '',
+      t.excess ? '<span class="fact warn">超出目标 ' + t.excess + '</span>' : '',
+    ].join('');
+    return '<article class="target-card">'
+      + '<div class="title"><strong>' + esc(t.country_code) + '</strong>'
+      + '<span class="count">模板 #' + t.template_id + ' · ' + esc(t.panel_kind) + '</span>'
+      + '<span class="meter ' + (complete ? 'ok' : 'wait') + '">健康 '
+      + t.healthy + '/' + t.target_count + '</span></div>'
+      + '<div class="facts">' + (facts || '<span class="fact">状态正常</span>') + '</div>'
+      + '<div class="times">最近 ' + shortTime(t.last_checked_at)
+      + ' · 下次 ' + shortTime(t.next_check_at) + '</div>'
+      + (t.last_error ? '<div class="target-error" title="' + esc(t.last_error) + '">'
+        + esc(t.last_error) + '</div>' : '')
+      + '</article>';
+  }).join('');
+}
+
 async function poll(){
   try{
     view = await api('/api/exits');
@@ -687,11 +751,21 @@ async function poll(){
     renderExits();
     renderOrphans();
   }catch(e){}
-  try{ renderJobs(await api('/api/jobs') || []); }catch(e){}
+  try{
+    targetStatuses = await api('/api/targets') || [];
+    renderTargets();
+  }catch(e){}
+  try{
+    const jobs = await api('/api/jobs') || [];
+    renderJobs(jobs);
+    $('#reconcileNow').disabled = jobs.some(j => j.status === 'running'
+      && j.summary.includes('检测并自动填补国家出口'));
+  }catch(e){}
 }
 
 // ---- 新建向导 ----
-let regions = [], region = '', regionsLoaded = false;
+let regions = [], regionsLoaded = false;
+const selectedTargets = new Map();
 
 function openModal(id){ $('#' + id).classList.add('open'); }
 function closeModal(id){ $('#' + id).classList.remove('open'); }
@@ -712,44 +786,31 @@ function renderRegions(){
   const kw = $('#rgfilter').value.trim().toLowerCase();
   const list = regions.filter(r => !kw
     || r.code.toLowerCase().includes(kw) || r.name.toLowerCase().includes(kw));
-  $('#regions').innerHTML = ['<button class="rg' + (region === '' ? ' sel' : '')
-      + '" data-rg=""><b>不限地区</b><em>速度优先</em></button>',
-    '<button class="rg' + (region === '*' ? ' sel' : '')
-      + '" data-rg="*"><b>每个国家</b><em>' + regions.length + ' 个国家各来几个</em></button>']
-    .concat(list.map(r => '<button class="rg' + (region === r.code ? ' sel' : '')
-      + '" data-rg="' + esc(r.code) + '"><b>' + esc(r.name || r.code) + '</b>'
-      + '<em>' + r.available + ' 个空闲 · ' + r.best_speed_mbps.toFixed(0) + ' Mbps</em></button>'))
-    .join('');
-  updateAvail();
+  $('#regions').innerHTML = list.map(r => {
+    const selected = selectedTargets.has(r.code);
+    const count = selectedTargets.get(r.code) || 1;
+    return '<div class="rg countrypick' + (selected ? ' sel' : '') + '" data-target-row="' + esc(r.code) + '">'
+      + '<button type="button" class="countrytoggle" data-rg="' + esc(r.code) + '">'
+      + '<b>' + esc(r.name || r.code) + '</b>'
+      + '<em>' + r.available + ' 个空闲 · ' + r.best_speed_mbps.toFixed(0) + ' Mbps</em></button>'
+      + '<label class="countrycount">目标 <input type="number" min="1" max="999" value="' + count
+      + '" data-target-count="' + esc(r.code) + '"' + (selected ? '' : ' disabled') + '></label>'
+      + '</div>';
+  }).join('');
+  updateTargetHint();
 }
 
-function availOf(code){
-  if(code === '') return regions.reduce((a, r) => a + r.available, 0);
-  if(code === '*') return regions.reduce((a, r) => a + r.available, 0);
-  const r = regions.find(x => x.code === code);
-  return r ? r.available : 0;
-}
-
-function updateAvail(){
-  const want = Number($('#count').value) || 0;
+function updateTargetHint(){
+  const requested = Array.from(selectedTargets.values()).reduce((sum, n) => sum + n, 0);
+  const available = regions.reduce((sum, r) => sum + (selectedTargets.has(r.code) ? r.available : 0), 0);
   const hint = $('#availhint');
-  // 选了"每个国家"时，数量的意思是每国几个，提示要给出总条数
-  $('#countlabel').textContent = region === '*' ? '每个国家几个' : '数量';
-  if(region === '*'){
-    const n = regions.length;
-    const total = Math.min(n * want, availOf('*'));
-    hint.className = 'hint';
-    hint.textContent = n
-      ? n + ' 个国家 × ' + want + '，一共 ' + total + ' 条出口'
-      : '还没有可用节点';
-    $('#go').disabled = !n || !want;
-    return;
-  }
-  const avail = availOf(region);
-  hint.textContent = avail ? '可用 ' + avail + ' 个节点' : '这个地区没有空闲节点';
-  hint.className = 'hint' + (want > avail ? ' bad' : '');
-  if(want > avail && avail) hint.textContent = '只剩 ' + avail + ' 个，将全部使用';
-  $('#go').disabled = !avail;
+  hint.className = 'hint' + (requested > available && selectedTargets.size ? ' bad' : '');
+  hint.textContent = selectedTargets.size
+    ? '已选 ' + selectedTargets.size + ' 个国家，目标共 ' + requested + ' 个；当前约 ' + available
+      + ' 个空闲。当前空闲数仅供参考，缺口会在后续检测中继续填补。'
+    : '可多选国家并分别填写数量。当前空闲数仅供参考；目标可以更大。';
+  const templateOK = Number($('#tpl').value) > 0;
+  $('#go').disabled = isXCL() || !selectedTargets.size || !templateOK;
 }
 
 async function loadWizard(){
@@ -760,13 +821,16 @@ async function loadWizard(){
   }catch(e){ toast('读取地区失败: ' + e.message, true); }
 
   const sel = $('#tpl');
-  // xray-cf-lite 模式不能复制节点，向导退化成"只开出口"，之后在节点详情里挑出口
+  // xray-cf-lite 的节点由外部服务管理，不能建立需要克隆模板的保有目标。
   if(isXCL()){
     $('#tplwrap').hidden = true;
-    sel.innerHTML = '<option value="0">只开出口，不建节点</option>';
+    $('#targetReadonly').hidden = false;
+    sel.innerHTML = '<option value="0">不可用</option>';
+    updateTargetHint();
     return;
   }
   $('#tplwrap').hidden = false;
+  $('#targetReadonly').hidden = true;
   try{
     // 已经挂在出口上的多半是上一批复制出来的，拿它当模板会套娃，
     // 所以把没绑出口的排在前面并默认选中
@@ -777,6 +841,7 @@ async function loadWizard(){
     if(!inbounds.length){
       sel.innerHTML = '<option value="0">还没有节点</option>';
       $('#tplhint').textContent = '先用上面的「新建节点」建一个，之后这里可以按它批量生成';
+      updateTargetHint();
       return;
     }
     const opt = i => '<option value="' + i.id + '">'
@@ -784,12 +849,13 @@ async function loadWizard(){
       + ' :' + i.port + '</option>';
     sel.innerHTML =
       (free.length ? '<optgroup label="未绑定出口">' + free.map(opt).join('') + '</optgroup>' : '')
-      + (bound.length ? '<optgroup label="已挂在出口上">' + bound.map(opt).join('') + '</optgroup>' : '')
-      + '<option value="0">只开出口，不建节点</option>';
-    $('#tplhint').textContent = '每个出口复制一份，客户端 UUID 保持一致，只有端口不同';
+      + (bound.length ? '<optgroup label="已挂在出口上">' + bound.map(opt).join('') + '</optgroup>' : '');
+    $('#tplhint').textContent = '每个国家按此模板创建节点；后续换 VPN 后端时端口和客户端链接保持不变';
+    updateTargetHint();
   }catch(e){
     sel.innerHTML = '<option value="0">' + backendName() + '不可用</option>';
     $('#tplhint').textContent = e.message;
+    updateTargetHint();
   }
 }
 
@@ -800,9 +866,9 @@ document.addEventListener('click', e => {
   }
   const rg = e.target.closest('[data-rg]');
   if(rg){
-    region = rg.dataset.rg;
-    // "每个国家"是批量，默认每国 1 个，免得一点就开出几十条
-    if(region === '*' && Number($('#count').value) > 3) $('#count').value = '1';
+    const code = rg.dataset.rg;
+    if(selectedTargets.has(code)) selectedTargets.delete(code);
+    else selectedTargets.set(code, 1);
     renderRegions();
   }
 });
@@ -880,33 +946,55 @@ $('#ncreate').onclick = async e => {
 };
 
 $('#rgfilter').oninput = renderRegions;
-$('#minus').onclick = () => { step(-1); };
-$('#plus').onclick = () => { step(1); };
-function step(d){
-  const el = $('#count');
-  el.value = Math.min(20, Math.max(1, (Number(el.value) || 1) + d));
-  updateAvail();
-}
-$('#count').oninput = updateAvail;
+$('#tpl').onchange = updateTargetHint;
+document.addEventListener('input', e => {
+  const input = e.target.closest('[data-target-count]');
+  if(!input) return;
+  const count = Math.min(999, Math.max(1, Number(input.value) || 1));
+  input.value = count;
+  selectedTargets.set(input.dataset.targetCount, count);
+  const row = input.closest('[data-target-row]');
+  if(row) row.classList.add('sel');
+  input.disabled = false;
+  updateTargetHint();
+});
 
 $('#go').onclick = async e => {
-  const want = Math.min(Number($('#count').value) || 1, availOf(region) || 1);
-  const tpl = $('#tpl').value || '0';
+  const templateID = Number($('#tpl').value);
+  const targets = Array.from(selectedTargets, ([country_code, target_count]) => ({
+    country_code, target_count,
+  }));
+  if(!templateID || !targets.length){ updateTargetHint(); return; }
   e.target.disabled = true;
   try{
-    await api('/api/provision?count=' + want
-      + (region === '*' ? '&every=1' : '&region=' + encodeURIComponent(region))
-      + '&template=' + tpl, {method:'POST'});
+    await api('/api/targets', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({template_id: templateID, targets}),
+    });
+    toast('已保存多国家出口目标，正在检测并填补');
     closeModal('wizard');
     poll();
   }catch(err){ toast(err.message, true); }
   e.target.disabled = false;
 };
 
+$('#reconcileNow').onclick = async e => {
+  e.target.disabled = true;
+  try{
+    await api('/api/targets/reconcile', {method:'POST'});
+    toast('已开始检测并自动填补');
+    poll();
+  }catch(err){ toast(err.message, true); e.target.disabled = false; }
+};
+
 // ---- 出口操作 ----
 document.addEventListener('click', async e => {
   const stop = e.target.closest('[data-stop]');
   if(stop){
+    const managed = view.exits.find(x => x.slot === Number(stop.dataset.stop));
+    if(managed && managed.target_id
+      && !confirm('此出口属于自动保有目标；目标数量不变时，系统会自动补齐。仍要停止吗？')) return;
     stop.disabled = true;
     try{ await api('/api/stop?slot=' + stop.dataset.stop, {method:'POST'}); }
     catch(err){ toast(err.message, true); }
@@ -957,7 +1045,11 @@ document.addEventListener('click', async e => {
 });
 
 $('#stopall').onclick = async e => {
-  if(!confirm('停止全部 ' + view.exits.length + ' 个出口？')) return;
+  const managed = view.exits.some(x => x.target_id);
+  const warning = managed
+    ? '停止全部 ' + view.exits.length + ' 个出口？其中包含自动保有出口；目标数量不变时，系统会自动补齐。'
+    : '停止全部 ' + view.exits.length + ' 个出口？';
+  if(!confirm(warning)) return;
   e.target.disabled = true;
   for(const x of view.exits){
     try{ await api('/api/stop?slot=' + x.slot, {method:'POST'}); }catch(err){}
