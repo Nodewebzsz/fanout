@@ -212,7 +212,7 @@ func (n *Native) ResyncOutbound(t *Tunnel, tunnels []*Tunnel) error {
 // CloneToTunnels 以某个入站为模板，为每条指定隧道复制一个入站并绑好出口。
 //
 // 客户端凭据整套沿用模板：同一个 UUID 能走所有出口，用户只改端口。
-func (n *Native) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunnel) ([]int, error) {
+func (n *Native) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunnel) ([]ClonedInbound, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -232,7 +232,17 @@ func (n *Native) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunne
 	for _, ib := range n.store.Inbounds {
 		takenRemarks[strings.TrimSpace(ib.Remark)] = true
 	}
-	created := []int{}
+	previousNextID := n.store.NextID
+	previousInbounds := append([]*nativeInbound(nil), n.store.Inbounds...)
+	created := []ClonedInbound{}
+	rollback := func(cause error) ([]ClonedInbound, error) {
+		n.store.NextID = previousNextID
+		n.store.Inbounds = previousInbounds
+		if restoreErr := n.apply(tunnels); restoreErr != nil {
+			return nil, fmt.Errorf("%w（回滚自建入站时又失败: %v）", cause, restoreErr)
+		}
+		return nil, cause
+	}
 	for _, host := range hosts {
 		t := byHost[host]
 		if t == nil || t.Status != "up" {
@@ -240,7 +250,10 @@ func (n *Native) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunne
 		}
 		port, err := freeRandomPort(used)
 		if err != nil {
-			return created, err
+			if len(created) > 0 {
+				return rollback(err)
+			}
+			return nil, err
 		}
 		used[port] = true
 
@@ -266,14 +279,14 @@ func (n *Native) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunne
 		}
 		n.store.NextID++
 		n.store.Inbounds = append(n.store.Inbounds, clone)
-		created = append(created, port)
+		created = append(created, ClonedInbound{ID: clone.ID, Port: port, HostName: host})
 	}
 
 	if len(created) == 0 {
 		return created, fmt.Errorf("没有可用的隧道")
 	}
 	if err := n.apply(tunnels); err != nil {
-		return created, err
+		return rollback(err)
 	}
 	return created, nil
 }

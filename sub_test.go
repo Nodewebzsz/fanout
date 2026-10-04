@@ -37,7 +37,7 @@ func (f *fakePanel) InboundLinks(ids []int, publicHost string) ([]string, error)
 func (f *fakePanel) Bind(string, string, []*Tunnel) error    { return nil }
 func (f *fakePanel) Rebind(string, *Tunnel, []*Tunnel) error { return nil }
 func (f *fakePanel) ResyncOutbound(*Tunnel, []*Tunnel) error { return nil }
-func (f *fakePanel) CloneToTunnels(int, []string, []*Tunnel) ([]int, error) {
+func (f *fakePanel) CloneToTunnels(int, []string, []*Tunnel) ([]ClonedInbound, error) {
 	return nil, nil
 }
 func (f *fakePanel) DeleteInbounds([]int, []*Tunnel) error { return nil }

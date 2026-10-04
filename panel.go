@@ -27,7 +27,7 @@ type Panel interface {
 	Rebind(oldHost string, target *Tunnel, tunnels []*Tunnel) error
 	ResyncOutbound(t *Tunnel, tunnels []*Tunnel) error
 
-	CloneToTunnels(templateID int, hosts []string, tunnels []*Tunnel) ([]int, error)
+	CloneToTunnels(templateID int, hosts []string, tunnels []*Tunnel) ([]ClonedInbound, error)
 	DeleteInbounds(ids []int, tunnels []*Tunnel) error
 
 	// CreateInbound 新建一个入站。自建模式写自己的库并重建 Xray 配置，
@@ -54,6 +54,14 @@ type Panel interface {
 	// Close 释放后端占用的资源。自建模式要停掉自己拉起的 Xray，
 	// 否则 fanout 退出后它会变成孤儿进程，下次启动撞端口。
 	Close()
+}
+
+// ClonedInbound identifies one inbound created for a tunnel. The ID is needed
+// for rollback and stable ownership; Port keeps the existing HTTP response useful.
+type ClonedInbound struct {
+	ID       int    `json:"id"`
+	Port     int    `json:"port"`
+	HostName string `json:"hostname"`
 }
 
 // InboundPatch 描述对入站的一次局部修改。指针为 nil 表示该字段不动。

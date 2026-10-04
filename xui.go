@@ -625,8 +625,8 @@ func (x *XUI) syncOutbounds(setting map[string]any, tunnels []*Tunnel) {
 // CloneToTunnels 以某个入站为模板，为每条指定隧道复制一个入站并绑定到对应出口。
 //
 // 复制时必须换掉端口、备注，以及客户端的 id/email —— 这些在面板里要求唯一。
-// 返回新建入站的端口列表。
-func (x *XUI) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunnel) ([]int, error) {
+// 返回新建入站的稳定标识。
+func (x *XUI) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunnel) ([]ClonedInbound, error) {
 	raw, err := x.rawInbound(templateID)
 	if err != nil {
 		return nil, err
@@ -655,7 +655,17 @@ func (x *XUI) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunnel) 
 		}
 	}
 
-	created := []int{}
+	created := []ClonedInbound{}
+	createdIDs := []int{}
+	rollback := func(cause error) ([]ClonedInbound, error) {
+		if len(createdIDs) == 0 {
+			return nil, cause
+		}
+		if rollbackErr := x.DeleteInbounds(createdIDs, tunnels); rollbackErr != nil {
+			return nil, fmt.Errorf("%w（回滚已创建入站时又失败: %v）", cause, rollbackErr)
+		}
+		return nil, cause
+	}
 	for _, host := range hosts {
 		t := byHost[host]
 		if t == nil || t.Status != "up" {
@@ -664,13 +674,13 @@ func (x *XUI) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunnel) 
 
 		port, err := freeRandomPort(used)
 		if err != nil {
-			return created, err
+			return rollback(err)
 		}
 		used[port] = true
 
 		clone, err := cloneInboundPayload(raw, port, t)
 		if err != nil {
-			return created, err
+			return rollback(err)
 		}
 		if remark, ok := clone["remark"].(string); ok {
 			unique := uniqueRemark(remark, takenRemarks)
@@ -679,29 +689,30 @@ func (x *XUI) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunnel) 
 		}
 		newID, err := x.addInbound(clone)
 		if err != nil {
-			return created, fmt.Errorf("复制到端口 %d 失败: %w", port, err)
+			return rollback(fmt.Errorf("复制到端口 %d 失败: %w", port, err))
 		}
+		createdIDs = append(createdIDs, newID)
 		if len(emails) > 0 {
 			if err := x.attachClients(emails, newID); err != nil {
-				return created, err
+				return rollback(err)
 			}
 		}
-		created = append(created, port)
 
 		// Read the tag assigned by 3x-ui instead of guessing it from the
 		// template transport. This matters for WS inbounds whose persisted tag
 		// may still use the "tcp" suffix.
 		newRaw, err := x.rawInbound(newID)
 		if err != nil {
-			return created, fmt.Errorf("读取端口 %d 的入站标签失败: %w", port, err)
+			return rollback(fmt.Errorf("读取端口 %d 的入站标签失败: %w", port, err))
 		}
 		newTag, _ := newRaw["tag"].(string)
 		if newTag == "" {
 			newTag = inboundTagOf(port, raw)
 		}
 		if err := x.Bind(newTag, t.Node.HostName, tunnels); err != nil {
-			return created, fmt.Errorf("端口 %d 绑定失败: %w", port, err)
+			return rollback(fmt.Errorf("端口 %d 绑定失败: %w", port, err))
 		}
+		created = append(created, ClonedInbound{ID: newID, Port: port, HostName: host})
 	}
 	return created, nil
 }

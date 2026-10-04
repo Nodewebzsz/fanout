@@ -618,8 +618,12 @@ func apiXUIClone(m *Manager) http.HandlerFunc {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
-		ports, err := x.CloneToTunnels(id, hosts, tunnels)
+		created, err := x.CloneToTunnels(id, hosts, tunnels)
 		invalidateInbounds()
+		ports := make([]int, 0, len(created))
+		for _, inbound := range created {
+			ports = append(ports, inbound.Port)
+		}
 		if err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error(), "created": ports})
 			return

@@ -379,7 +379,7 @@ func (x *XCL) CreateInbound(spec NewInboundSpec, tunnels []*Tunnel) (*CreatedInb
 	return nil, errXCLReadOnly
 }
 
-func (x *XCL) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunnel) ([]int, error) {
+func (x *XCL) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunnel) ([]ClonedInbound, error) {
 	return nil, errXCLReadOnly
 }
 

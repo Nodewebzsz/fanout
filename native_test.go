@@ -1,9 +1,65 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func nativeCloneFixture(t *testing.T, verifyOK bool) *Native {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "fake-xray")
+	verifyExit := "0"
+	if !verifyOK {
+		verifyExit = "1"
+	}
+	script := "#!/bin/sh\n" +
+		"case \" $* \" in\n" +
+		"  *\" -test \"*) exit " + verifyExit + ";;\n" +
+		"  *) sleep 30;;\n" +
+		"esac\n"
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	n := &Native{
+		dir: dir,
+		store: &nativeStore{
+			NextID: 2,
+			Inbounds: []*nativeInbound{{
+				ID: 1, Port: 10001, Protocol: "vless", Enable: true,
+				Clients: []nativeClient{{Email: "template", ID: "uuid", Enable: true}},
+			}},
+		},
+		proc: &xrayProc{bin: bin, dir: dir},
+	}
+	t.Cleanup(n.Close)
+	return n
+}
+
+func TestNativeCloneReturnsIdentity(t *testing.T) {
+	n := nativeCloneFixture(t, true)
+	tunnel := &Tunnel{Status: "up", Node: Node{HostName: "jp1", CountryCode: "JP"}}
+	created, err := n.CloneToTunnels(1, []string{"jp1"}, []*Tunnel{tunnel})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 1 || created[0].ID == 0 || created[0].Port == 0 || created[0].HostName != "jp1" {
+		t.Fatalf("clone identity missing: %+v", created)
+	}
+}
+
+func TestNativeCloneRollsBackStoreWhenApplyFails(t *testing.T) {
+	n := nativeCloneFixture(t, false)
+	tunnel := &Tunnel{Status: "up", Node: Node{HostName: "jp1", CountryCode: "JP"}}
+	if _, err := n.CloneToTunnels(1, []string{"jp1"}, []*Tunnel{tunnel}); err == nil {
+		t.Fatal("expected apply failure")
+	}
+	if n.store.NextID != 2 || len(n.store.Inbounds) != 1 || n.store.byID(1) == nil {
+		t.Fatalf("failed clone changed native store: %+v", n.store)
+	}
+}
 
 func TestNativeInboundTagMatchesXUIFormat(t *testing.T) {
 	// tag 格式必须和 3x-ui 一致，否则两种后端的绑定语义会对不上

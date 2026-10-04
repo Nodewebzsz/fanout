@@ -3,9 +3,98 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestXUICloneRollsBackWhenBindFails(t *testing.T) {
+	var added, deleted bool
+	var created map[string]any
+
+	writeEnvelope := func(w http.ResponseWriter, success bool, msg string, obj any) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": success,
+			"msg":     msg,
+			"obj":     obj,
+		})
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/panel/api/inbounds/list":
+			list := []map[string]any{{
+				"id": 1, "port": 10001, "protocol": "vless", "remark": "template",
+				"enable": true, "tag": "in-10001-tcp", "listen": "",
+				"settings":       map[string]any{"clients": []any{}},
+				"streamSettings": map[string]any{"network": "tcp"},
+				"sniffing":       map[string]any{"enabled": true},
+			}}
+			if added {
+				list = append(list, created)
+			}
+			writeEnvelope(w, true, "", list)
+		case r.Method == http.MethodPost && r.URL.Path == "/panel/api/inbounds/add":
+			if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
+				t.Errorf("decode add payload: %v", err)
+				writeEnvelope(w, false, err.Error(), nil)
+				return
+			}
+			created["id"] = float64(2)
+			created["tag"] = fmt.Sprintf("in-%d-tcp", int(toFloat(created["port"])))
+			created["settings"] = map[string]any{"clients": []any{}}
+			created["streamSettings"] = map[string]any{"network": "tcp"}
+			created["sniffing"] = map[string]any{"enabled": true}
+			added = true
+			writeEnvelope(w, true, "", map[string]any{"id": 2})
+		case r.Method == http.MethodPost && r.URL.Path == "/panel/api/inbounds/del/2":
+			deleted = true
+			added = false
+			writeEnvelope(w, true, "", nil)
+		case r.Method == http.MethodPost && r.URL.Path == "/panel/api/xray/":
+			if added {
+				writeEnvelope(w, false, "forced bind failure", nil)
+				return
+			}
+			setting, _ := json.Marshal(map[string]any{
+				"outbounds": []any{},
+				"routing":   map[string]any{"rules": []any{}},
+			})
+			inner, _ := json.Marshal(map[string]any{
+				"outboundTestUrl": "",
+				"xraySetting":     json.RawMessage(setting),
+			})
+			writeEnvelope(w, true, "", string(inner))
+		case r.Method == http.MethodPost && (r.URL.Path == "/panel/api/xray/update" || r.URL.Path == "/panel/api/server/restartXrayService"):
+			writeEnvelope(w, true, "", nil)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	u, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	x := &XUI{Host: u.Hostname(), Port: port, Scheme: u.Scheme, client: server.Client()}
+	tunnel := &Tunnel{Status: "up", Node: Node{HostName: "jp1", CountryCode: "JP"}}
+	if _, err := x.CloneToTunnels(1, []string{"jp1"}, []*Tunnel{tunnel}); err == nil || !strings.Contains(err.Error(), "forced bind failure") {
+		t.Fatalf("expected bind failure, got %v", err)
+	}
+	if !deleted || added {
+		t.Fatalf("partial clone was not rolled back: added=%v deleted=%v", added, deleted)
+	}
+}
 
 // 换节点改名：只动 fanout 自己起的名字。
 //
