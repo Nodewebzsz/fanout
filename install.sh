@@ -75,7 +75,10 @@ INITEOF
 
 svc_enable_start() {
   if [[ "$INIT_SYS" == systemd ]]; then
-    systemctl enable --now fanout
+    systemctl enable fanout
+    # --now only starts an inactive service; reinstalling an existing service
+    # must restart it so the newly installed binary is actually loaded.
+    systemctl restart fanout
   else
     rc-update add fanout default >/dev/null 2>&1 || true
     rc-service fanout restart
