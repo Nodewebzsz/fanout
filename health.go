@@ -55,15 +55,15 @@ func (m *Manager) checkHealth(fails map[int]int, onManagedFailure func(*Tunnel))
 	}
 }
 
-// expireStarting releases a managed slot whose current connection attempt has
-// outlived the same deadline used by the attempt itself. New managed slots are
-// removed so reconciliation can allocate a fresh candidate; an existing slot
+// expireStarting releases a slot whose current connection attempt has outlived
+// the same deadline used by the attempt itself. New slots are removed so
+// reconciliation can allocate a fresh candidate; an existing managed slot
 // being repaired keeps its stable SOCKS/inbound identity and becomes a
 // waiting_fill slot instead.
 func (m *Manager) expireStarting() {
 	now := time.Now()
 	for _, t := range m.Tunnels() {
-		if t.TargetID == "" || t.Status != "starting" || t.Since.IsZero() ||
+		if t.Status != "starting" || t.Since.IsZero() ||
 			now.Sub(t.Since) < connectAttemptTimeout {
 			continue
 		}
@@ -74,14 +74,7 @@ func (m *Manager) expireStarting() {
 			continue
 		}
 
-		m.mu.Lock()
-		if m.tunnels[t.Slot] == t {
-			delete(m.tunnels, t.Slot)
-		}
-		m.mu.Unlock()
-		t.Status = "stopped"
-		_ = m.saveState()
-		m.notifyPanel()
+		m.removeTunnel(t)
 	}
 }
 

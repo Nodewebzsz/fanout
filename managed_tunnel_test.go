@@ -47,6 +47,23 @@ func TestManagedCandidateFailureRemovesNewSlot(t *testing.T) {
 	}
 }
 
+func TestExpireStartingRemovesUnmanagedStaleSlot(t *testing.T) {
+	oldTimeout := connectAttemptTimeout
+	connectAttemptTimeout = time.Second
+	defer func() { connectAttemptTimeout = oldTimeout }()
+
+	m := NewManager(20, t.TempDir())
+	tunnel := &Tunnel{
+		Slot: 1, Status: "starting", Since: time.Now().Add(-2 * time.Second),
+		Node: Node{HostName: "us-stuck", CountryCode: "US"},
+	}
+	m.tunnels[1] = tunnel
+	m.expireStarting()
+	if len(m.Tunnels()) != 0 || tunnel.Status != "stopped" {
+		t.Fatalf("stale unmanaged starting slot was not removed: tunnels=%+v status=%q", m.Tunnels(), tunnel.Status)
+	}
+}
+
 func TestRepairManagedCandidateKeepsIdentity(t *testing.T) {
 	m := NewManager(20, t.TempDir())
 	m.tryNodeFn = func(tunnel *Tunnel) error {

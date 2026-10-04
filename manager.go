@@ -212,6 +212,8 @@ func (m *Manager) tryCandidates(t *Tunnel, notify bool) bool {
 	// VPN Gate 是志愿者节点，列表里有相当比例已下线或满员（AUTH_FAILED），
 	// 连不上就顺着候选列表换下一个，不必让用户手动试。
 	candidates := m.candidatesFor(t)
+	startedAt := time.Now()
+	t.Since = startedAt
 	for i, node := range candidates {
 		if !m.tunnelActive(t) {
 			return false
@@ -222,7 +224,6 @@ func (m *Manager) tryCandidates(t *Tunnel, notify bool) bool {
 		}
 		t.Node = node
 		t.Status = "starting"
-		t.Since = time.Now()
 		if i > 0 {
 			t.Err = fmt.Sprintf("已换到第 %d 个候选节点", i+1)
 		}
@@ -243,8 +244,29 @@ func (m *Manager) tryCandidates(t *Tunnel, notify bool) bool {
 			return true
 		}
 		t.teardownNetns()
+		if time.Since(startedAt) >= connectAttemptTimeout {
+			m.removeTunnel(t)
+			return false
+		}
 	}
 	return false
+}
+
+// removeTunnel releases a tunnel that can no longer be considered a usable
+// connection. It is intentionally used for both managed and manually created
+// tunnels: a stale "starting" row must not consume a slot forever.
+func (m *Manager) removeTunnel(t *Tunnel) {
+	if t == nil {
+		return
+	}
+	m.mu.Lock()
+	if m.tunnels[t.Slot] == t {
+		delete(m.tunnels, t.Slot)
+	}
+	m.mu.Unlock()
+	t.stop()
+	_ = m.saveState()
+	m.notifyPanel()
 }
 
 // tunnelActive 判断这条隧道是否还归管理器所有且未被用户停掉。
