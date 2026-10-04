@@ -109,6 +109,18 @@ func (r *CountryReconciler) RequestRepair(tunnel *Tunnel) {
 	r.Trigger("健康检查")
 }
 
+// RunScheduler triggers full deficit reconciliation at the configured interval.
+func (r *CountryReconciler) RunScheduler(interval time.Duration) {
+	if interval <= 0 {
+		interval = reconcileInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for range ticker.C {
+		r.Trigger("定时检查")
+	}
+}
+
 // Statuses returns deterministic live counts for every persistent target.
 func (r *CountryReconciler) Statuses() []CountryTargetStatus {
 	tunnels := r.mgr.Tunnels()

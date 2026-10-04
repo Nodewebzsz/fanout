@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
 )
@@ -12,29 +13,44 @@ const (
 
 // WatchHealth 周期检查每条隧道是否还能出网，掉线的自动换节点重连。
 // VPN Gate 是志愿者节点，运行中掉线很常见。
-func (m *Manager) WatchHealth() {
+func (m *Manager) WatchHealth(onManagedFailure func(*Tunnel)) {
 	fails := map[int]int{}
 
 	for range time.Tick(healthInterval) {
-		for _, t := range m.Tunnels() {
-			if t.Status != "up" {
-				continue
-			}
-			if m.tunnelHealthy(t) {
-				fails[t.Slot] = 0
-				continue
-			}
+		m.checkHealth(fails, onManagedFailure)
+	}
+}
 
-			fails[t.Slot]++
-			if fails[t.Slot] < healthFailures {
-				log.Printf("隧道 %d (%s) 探测失败 %d 次", t.Slot, t.Node.HostName, fails[t.Slot])
-				continue
-			}
-
-			log.Printf("隧道 %d (%s) 已掉线，正在换节点重连", t.Slot, t.Node.HostName)
-			fails[t.Slot] = 0
-			m.reconnect(t, t.Node.HostName)
+func (m *Manager) checkHealth(fails map[int]int, onManagedFailure func(*Tunnel)) {
+	for _, t := range m.Tunnels() {
+		if t.Status != "up" {
+			delete(fails, t.Slot)
+			continue
 		}
+		if m.tunnelHealthy(t) {
+			fails[t.Slot] = 0
+			continue
+		}
+
+		fails[t.Slot]++
+		if fails[t.Slot] < healthFailures {
+			log.Printf("隧道 %d (%s) 探测失败 %d 次", t.Slot, t.Node.HostName, fails[t.Slot])
+			continue
+		}
+
+		fails[t.Slot] = 0
+		if t.TargetID != "" {
+			log.Printf("托管隧道 %d (%s) 已掉线，等待同国家节点填补", t.Slot, t.Node.HostName)
+			m.stopManagedTransport(t)
+			m.MarkWaitingFill(t, fmt.Errorf("连续 %d 次健康检查失败", healthFailures))
+			if onManagedFailure != nil {
+				onManagedFailure(t)
+			}
+			continue
+		}
+
+		log.Printf("隧道 %d (%s) 已掉线，正在换节点重连", t.Slot, t.Node.HostName)
+		m.reconnect(t, t.Node.HostName)
 	}
 }
 

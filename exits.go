@@ -18,15 +18,16 @@ type ExitInbound struct {
 // Exit 是界面上的一行：一条隧道加上挂在它出口的所有入站。
 // 用户脑子里的单位是"一个出口"，不是"一条隧道"和"一个入站"两样东西。
 type Exit struct {
-	Slot    int       `json:"slot"`
-	Port    int       `json:"port"` // SOCKS5 端口
-	Host    string    `json:"host"`
-	Region  string    `json:"region"`
-	Country string    `json:"country"`
-	ExitIP  string    `json:"exit_ip"`
-	Status  string    `json:"status"`
-	Err     string    `json:"err,omitempty"`
-	Since   time.Time `json:"since"`
+	Slot     int       `json:"slot"`
+	Port     int       `json:"port"` // SOCKS5 端口
+	Host     string    `json:"host"`
+	Region   string    `json:"region"`
+	Country  string    `json:"country"`
+	ExitIP   string    `json:"exit_ip"`
+	Status   string    `json:"status"`
+	Err      string    `json:"err,omitempty"`
+	Since    time.Time `json:"since"`
+	TargetID string    `json:"target_id,omitempty"`
 	// SOCKS5 凭据：界面要能看、能复制、能改
 	SocksUser string        `json:"socks_user"`
 	SocksPass string        `json:"socks_pass"`
@@ -109,7 +110,7 @@ func (m *Manager) ExitsOf() ExitsView {
 		view.Exits = append(view.Exits, Exit{
 			Slot: t.Slot, Port: t.Port, Host: t.Node.HostName,
 			Region: t.Node.CountryCode, Country: nodeLabel(t.Node),
-			ExitIP: t.ExitIP, Status: t.Status, Err: t.Err, Since: t.Since,
+			ExitIP: t.ExitIP, Status: t.Status, Err: t.Err, Since: t.Since, TargetID: t.TargetID,
 			SocksUser: cred.User, SocksPass: cred.Pass,
 		})
 	}

@@ -80,6 +80,11 @@ func main() {
 	}
 
 	mgr := NewManager(*maxSlots, *workDir)
+	targetStore, err := LoadCountryTargetStore(*workDir)
+	if err != nil {
+		log.Fatalf("加载国家出口目标失败: %v", err)
+	}
+	reconciler := NewCountryReconciler(mgr, targetStore)
 	log.Printf("正在拉取节点列表...")
 	if n, err := mgr.RefreshNodes(); err != nil {
 		log.Printf("拉取失败（可在 Web 界面重试）: %v", err)
@@ -96,7 +101,9 @@ func main() {
 		go mgr.ReconcileOutbounds()
 	}
 
-	go mgr.WatchHealth()
+	reconciler.Trigger("启动检查")
+	go reconciler.RunScheduler(reconcileInterval)
+	go mgr.WatchHealth(reconciler.RequestRepair)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -120,6 +127,8 @@ func main() {
 	mux.HandleFunc("/api/refresh", apiRefresh(mgr))
 	mux.HandleFunc("/api/regions", apiRegions(mgr))
 	mux.HandleFunc("/api/provision", apiProvision(mgr))
+	mux.HandleFunc("/api/targets", apiTargets(reconciler))
+	mux.HandleFunc("/api/targets/reconcile", apiTargetsReconcile(reconciler))
 	mux.HandleFunc("/api/jobs", apiJobs(mgr))
 	mux.HandleFunc("/api/jobs/dismiss", apiJobDismiss(mgr))
 	mux.HandleFunc("/api/exits", apiExits(mgr))
@@ -462,6 +471,78 @@ func apiProvision(m *Manager) http.HandlerFunc {
 func apiJobs(m *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, m.jobs.Views())
+	}
+}
+
+type upsertTargetsRequest struct {
+	TemplateID int           `json:"template_id"`
+	Targets    []TargetInput `json:"targets"`
+}
+
+// apiTargets lists live target status or upserts multiple country targets.
+func apiTargets(reconciler *CountryReconciler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, reconciler.Statuses())
+			return
+		case http.MethodPost:
+			var request upsertTargetsRequest
+			decoder := json.NewDecoder(r.Body)
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&request); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求 JSON 无效: " + err.Error()})
+				return
+			}
+			if request.TemplateID <= 0 {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "template_id 必须大于 0"})
+				return
+			}
+			if len(request.Targets) == 0 {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "至少选择一个国家"})
+				return
+			}
+			panel, err := openPanel()
+			if err != nil {
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+				return
+			}
+			if panel.Kind() == "xray-cf-lite" {
+				writeJSON(w, http.StatusConflict, map[string]string{"error": errXCLReadOnly.Error()})
+				return
+			}
+			if _, err := panel.InboundDetail(request.TemplateID, ""); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
+			updated, err := reconciler.store.Upsert(panel.Kind(), request.TemplateID, request.Targets)
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
+			job, started := reconciler.Trigger("目标更新")
+			writeJSON(w, http.StatusOK, map[string]any{
+				"targets": updated,
+				"job":     job.View(),
+				"started": started,
+			})
+			return
+		default:
+			w.Header().Set("Allow", "GET, POST")
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "方法不允许"})
+		}
+	}
+}
+
+func apiTargetsReconcile(reconciler *CountryReconciler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST")
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "方法不允许"})
+			return
+		}
+		job, started := reconciler.Trigger("手动检查")
+		writeJSON(w, http.StatusOK, map[string]any{"job": job.View(), "started": started})
 	}
 }
 
