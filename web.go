@@ -624,7 +624,7 @@ const STATUS = {up:'已连通', starting:'连接中', waiting_fill:'等待填补
 function renderExits(){
   const list = $('#list');
   const n = view.exits.length;
-  $('#ecount').textContent = n ? n + ' 个' : '';
+  $('#ecount').textContent = n ? n + ' / ' + (view.max_slots || '—') + ' 个' : '';
   $('#exportAll').disabled = !view.exits.some(e => e.inbounds && e.inbounds.length);
   $('#stopall').disabled = !n;
 

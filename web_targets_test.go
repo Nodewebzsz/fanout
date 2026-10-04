@@ -8,6 +8,7 @@ import (
 func TestIndexHTMLContainsTargetControls(t *testing.T) {
 	for _, want := range []string{
 		`id="targetList"`,
+		`view.max_slots`,
 		`id="reconcileNow"`,
 		`/api/targets`,
 		`/api/targets/reconcile`,
