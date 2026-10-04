@@ -229,6 +229,10 @@ func (r *CountryReconciler) coolDown(host string) {
 // RunOnce performs one bounded reconciliation pass. It never sleeps waiting for
 // candidates; unresolved deficits remain persistent for the next trigger.
 func (r *CountryReconciler) RunOnce(job *Job) {
+	// Clean up stale attempts before counting occupied slots. This makes a
+	// timed-out candidate immediately eligible for replacement in the same
+	// reconciliation pass instead of waiting for the health ticker.
+	r.mgr.expireStarting()
 	targets := r.store.List()
 	if len(targets) == 0 {
 		job.Set(0, "ok", "尚未设置出口保有目标")

@@ -5,7 +5,27 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+func TestManagedCandidateTimeoutRemovesNewSlot(t *testing.T) {
+	oldTimeout := connectAttemptTimeout
+	connectAttemptTimeout = 20 * time.Millisecond
+	defer func() { connectAttemptTimeout = oldTimeout }()
+
+	m := NewManager(20, t.TempDir())
+	m.tryNodeFn = func(*Tunnel) error {
+		time.Sleep(200 * time.Millisecond)
+		return nil
+	}
+	_, err := m.StartManagedCandidate(Node{HostName: "jp-stuck", CountryCode: "JP"}, "native:12:JP")
+	if err == nil {
+		t.Fatal("expected connection timeout")
+	}
+	if len(m.Tunnels()) != 0 {
+		t.Fatalf("timed out managed candidate leaked slot: %+v", m.Tunnels())
+	}
+}
 
 func TestManagedCandidateFailureRemovesNewSlot(t *testing.T) {
 	m := NewManager(20, t.TempDir())

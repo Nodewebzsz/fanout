@@ -138,6 +138,32 @@ const (
 	reconnectBackoffMax = 60 * time.Second
 )
 
+// connectAttemptTimeout is deliberately a little longer than OpenVPN's own
+// handshake timeout plus the exit-IP probes. It is the last line of defence
+// for a node whose process or network command gets stuck. A variable keeps
+// the expiry path fast and deterministic in tests.
+var connectAttemptTimeout = 75 * time.Second
+
+// tryNodeWithTimeout bounds every connection attempt.  A VPN Gate node can
+// disappear after being listed, and leaving its attempt in "starting" would
+// permanently consume a managed slot.
+func (m *Manager) tryNodeWithTimeout(t *Tunnel) error {
+	done := make(chan error, 1)
+	go func() {
+		done <- m.tryNodeFn(t)
+	}()
+
+	timer := time.NewTimer(connectAttemptTimeout)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err
+	case <-timer.C:
+		m.stopManagedTransport(t)
+		return fmt.Errorf("连接节点 %s 超时（超过 %s）", t.Node.HostName, connectAttemptTimeout.Round(time.Second))
+	}
+}
+
 // bringUpPersist 把一条隧道拉起来。
 //
 // persist=false（手动新建）：走一轮候选，全失败就标 failed，让用户能立刻看到并重试。
@@ -196,12 +222,16 @@ func (m *Manager) tryCandidates(t *Tunnel, notify bool) bool {
 		}
 		t.Node = node
 		t.Status = "starting"
+		t.Since = time.Now()
 		if i > 0 {
 			t.Err = fmt.Sprintf("已换到第 %d 个候选节点", i+1)
 		}
 
-		err := m.tryNodeFn(t)
+		err := m.tryNodeWithTimeout(t)
 		if err == nil {
+			if !m.tunnelActive(t) {
+				return false
+			}
 			t.Status = "up"
 			t.Err = ""
 			if serr := m.saveState(); serr != nil {

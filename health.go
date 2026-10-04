@@ -22,6 +22,7 @@ func (m *Manager) WatchHealth(onManagedFailure func(*Tunnel)) {
 }
 
 func (m *Manager) checkHealth(fails map[int]int, onManagedFailure func(*Tunnel)) {
+	m.expireStarting()
 	for _, t := range m.Tunnels() {
 		if t.Status != "up" {
 			delete(fails, t.Slot)
@@ -54,6 +55,36 @@ func (m *Manager) checkHealth(fails map[int]int, onManagedFailure func(*Tunnel))
 	}
 }
 
+// expireStarting releases a managed slot whose current connection attempt has
+// outlived the same deadline used by the attempt itself. New managed slots are
+// removed so reconciliation can allocate a fresh candidate; an existing slot
+// being repaired keeps its stable SOCKS/inbound identity and becomes a
+// waiting_fill slot instead.
+func (m *Manager) expireStarting() {
+	now := time.Now()
+	for _, t := range m.Tunnels() {
+		if t.TargetID == "" || t.Status != "starting" || t.Since.IsZero() ||
+			now.Sub(t.Since) < connectAttemptTimeout {
+			continue
+		}
+
+		m.stopManagedTransport(t)
+		if t.prevHostOf() != "" {
+			m.MarkWaitingFill(t, fmt.Errorf("连接节点 %s 超时，已释放并等待同国家节点填补", t.Node.HostName))
+			continue
+		}
+
+		m.mu.Lock()
+		if m.tunnels[t.Slot] == t {
+			delete(m.tunnels, t.Slot)
+		}
+		m.mu.Unlock()
+		t.Status = "stopped"
+		_ = m.saveState()
+		m.notifyPanel()
+	}
+}
+
 // tunnelHealthy 判断隧道是否还真的走在 VPN 上。
 //
 // 只看"能不能出网"是不够的：netns 通过 veth 走母机 NAT，
@@ -76,6 +107,7 @@ func (m *Manager) tunnelHealthy(t *Tunnel) bool {
 // 否则 rebind 找不到旧绑定，入站会掉成孤儿。
 func (m *Manager) reconnect(t *Tunnel, oldHost string) {
 	t.Status = "starting"
+	t.Since = time.Now()
 	t.Err = "正在换节点重连"
 	t.ExitIP = ""
 

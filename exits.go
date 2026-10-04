@@ -88,6 +88,10 @@ func invalidateInbounds() {
 
 // ExitsOf 把隧道和入站 join 成界面直接可用的形态。
 func (m *Manager) ExitsOf() ExitsView {
+	// The UI polls more frequently than the health ticker. Reap stale managed
+	// connection attempts here too, so an actually dead candidate cannot keep
+	// being presented as "连接中" between health checks.
+	m.expireStarting()
 	tunnels := m.Tunnels()
 	view := ExitsView{Exits: make([]Exit, 0, len(tunnels)), MaxSlots: m.maxSlots, PublicIP: hostPublicIP()}
 

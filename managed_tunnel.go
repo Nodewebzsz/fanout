@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // StartManagedCandidate performs exactly one connection attempt for a new
@@ -15,7 +16,7 @@ func (m *Manager) StartManagedCandidate(node Node, targetID string) (*Tunnel, er
 	if err != nil {
 		return nil, err
 	}
-	if err := m.tryNodeFn(tunnel); err != nil {
+	if err := m.tryNodeWithTimeout(tunnel); err != nil {
 		tunnel.stop()
 		m.mu.Lock()
 		if m.tunnels[tunnel.Slot] == tunnel {
@@ -78,6 +79,7 @@ func (m *Manager) RepairManagedCandidate(tunnel *Tunnel, candidate Node) error {
 	oldListener := tunnel.listener
 
 	tunnel.Status = "starting"
+	tunnel.Since = time.Now()
 	tunnel.Err = "正在填补同国家可用节点"
 	tunnel.ExitIP = ""
 	tunnel.setPrevHost(oldHost)
@@ -87,7 +89,7 @@ func (m *Manager) RepairManagedCandidate(tunnel *Tunnel, candidate Node) error {
 	m.stopManagedTransport(tunnel)
 	tunnel.Node = candidate
 
-	err := m.tryNodeFn(tunnel)
+	err := m.tryNodeWithTimeout(tunnel)
 	if tunnel.Port != stablePort {
 		if oldListener == nil && tunnel.listener != nil {
 			_ = tunnel.listener.Close()
