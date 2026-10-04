@@ -56,3 +56,16 @@ func TestIndexHTMLUsesStableCountryCardLayout(t *testing.T) {
 		}
 	}
 }
+
+func TestIndexHTMLResetsWizardOnClose(t *testing.T) {
+	for _, want := range []string{
+		"function resetWizard(){",
+		"selectedTargets.clear()",
+		"if(id === 'wizard') resetWizard()",
+		"forEach(m => closeModal(m.id))",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Fatalf("wizard reset behavior missing %q", want)
+		}
+	}
+}

@@ -776,7 +776,17 @@ let regions = [], regionsLoaded = false;
 const selectedTargets = new Map();
 
 function openModal(id){ $('#' + id).classList.add('open'); }
-function closeModal(id){ $('#' + id).classList.remove('open'); }
+function resetWizard(){
+  selectedTargets.clear();
+  $('#rgfilter').value = '';
+  $('#tpl').value = '0';
+  updateTargetHint();
+  if(regionsLoaded) renderRegions();
+}
+function closeModal(id){
+  if(id === 'wizard') resetWizard();
+  $('#' + id).classList.remove('open');
+}
 
 document.addEventListener('click', e => {
   const c = e.target.closest('[data-close]');
@@ -784,10 +794,10 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => {
   if(e.key === 'Escape') document.querySelectorAll('.modal.open')
-    .forEach(m => m.classList.remove('open'));
+    .forEach(m => closeModal(m.id));
 });
 document.querySelectorAll('.modal').forEach(m => {
-  m.onclick = e => { if(e.target === m) m.classList.remove('open'); };
+  m.onclick = e => { if(e.target === m) closeModal(m.id); };
 });
 
 function renderRegions(){
