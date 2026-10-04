@@ -23,6 +23,8 @@ type persistedTunnel struct {
 	// PrevHost 非空表示上次换节点只做了一半：隧道已经指向新节点，
 	// 但入站还绑在这个旧节点上。恢复时照着它把入站接回来。
 	PrevHost string `json:"prev_host,omitempty"`
+	// TargetID identifies the persistent country target that owns this managed exit.
+	TargetID string `json:"target_id,omitempty"`
 }
 
 type persistedState struct {
@@ -50,6 +52,7 @@ func (m *Manager) saveState() error {
 			SocksUser:   t.Cred.User,
 			SocksPass:   t.Cred.Pass,
 			PrevHost:    t.prevHostOf(),
+			TargetID:    t.TargetID,
 		})
 	}
 
@@ -107,11 +110,12 @@ func (m *Manager) restoreState() (int, error) {
 			cred = gen
 		}
 		t := &Tunnel{
-			Slot:   p.Slot,
-			Port:   p.Port,
-			Node:   node,
-			Status: "starting",
-			Cred:   cred,
+			Slot:     p.Slot,
+			Port:     p.Port,
+			Node:     node,
+			Status:   "starting",
+			Cred:     cred,
+			TargetID: p.TargetID,
 		}
 		t.setPrevHost(p.PrevHost)
 		m.mu.Lock()

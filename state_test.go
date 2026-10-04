@@ -45,6 +45,51 @@ func TestSaveStateKeepsPrevHost(t *testing.T) {
 	}
 }
 
+func TestSaveStateKeepsTargetID(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(20, dir)
+	m.tunnels[1] = &Tunnel{
+		Slot: 1, Port: 12345, Status: "waiting_fill",
+		TargetID: "native:12:JP",
+		Node:     Node{HostName: "jp1", CountryCode: "JP"},
+		Cred:     SocksCred{User: "u", Pass: "p"},
+	}
+	if err := m.saveState(); err != nil {
+		t.Fatal(err)
+	}
+
+	var st persistedState
+	blob, err := os.ReadFile(filepath.Join(dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(blob, &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Tunnels[0].TargetID != "native:12:JP" {
+		t.Fatalf("target id lost: %+v", st.Tunnels[0])
+	}
+}
+
+func TestRestoreStateReadsTargetID(t *testing.T) {
+	dir := t.TempDir()
+	blob := `{"tunnels":[{"slot":1,"port":12345,"hostname":"jp1","country_code":"JP","config":"x","socks_user":"u","socks_pass":"p","target_id":"native:12:JP"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(blob), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(20, dir)
+	if _, err := m.restoreState(); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.RLock()
+	tn := m.tunnels[1]
+	m.mu.RUnlock()
+	if got := tn.TargetID; got != "native:12:JP" {
+		t.Fatalf("target id not restored: %q", got)
+	}
+	tn.Status = "stopped"
+}
+
 // 收尾之后标记要清掉，否则每次重启都会白做一次改绑。
 func TestPrevHostClearedAfterSettle(t *testing.T) {
 	dir := t.TempDir()
