@@ -43,3 +43,16 @@ func TestIndexHTMLExplainsReadOnlyBackendTargets(t *testing.T) {
 		t.Fatal("read-only backend explanation missing")
 	}
 }
+
+func TestIndexHTMLUsesStableCountryCardLayout(t *testing.T) {
+	for _, want := range []string{
+		"grid-template-columns:repeat(auto-fit,minmax(154px,1fr))",
+		".countrypick{position:relative;display:block;min-height:74px}",
+		".countrypick .countrycount{position:absolute",
+		"-webkit-line-clamp:2",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Fatalf("country card layout missing %q", want)
+		}
+	}
+}
